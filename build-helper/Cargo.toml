@@ -1,7 +1,13 @@
-[package]
+[package] 
 name = "build-helper"
 description = "Kythera Rust Starter build helper"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["Polyphene"]
+
+[build-dependencies]
+kythera-lib = { git = "https://github.com/polyphene/kythera.git", branch="fix-actors-build", version = "0.1.0-alpha.2" }
+proc-macro2 = "1.0.57"
+syn = { version = "2.0.16", features = ["full", "extra-traits"] }
+
