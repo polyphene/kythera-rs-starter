@@ -1,8 +1,18 @@
-[package]
-name = "kythera-rs-starter"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+members = [
+    "build-helper",
+    "actors/*",
+    "tests/*",
+]
 
-[dependencies]
+
+[profile.wasm]
+inherits = "release"
+panic = "abort"
+overflow-checks = false
+lto = true
+opt-level = "z"
+strip = true
+codegen-units = 1
+incremental = false
