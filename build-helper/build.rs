@@ -1,54 +1,115 @@
-use convert_case::{Case, Casing};
 // Copyright 2023 Polyphene.
 // SPDX-License-Identifier: Apache-2.0, MIT
+
+use anyhow::{bail, Context};
+use convert_case::{Case, Casing};
 use kythera_lib::{self, Abi, Method};
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{fs, thread};
+use toml::Table;
 
 use proc_macro2::TokenTree;
 use syn::{Expr, Item};
 
 const FILES_TO_WATCH: &[&str] = &["Cargo.toml", "src", "../actors", "../tests"];
 
-/// The Kind of actor.
+/// The Kind of actors to parse.
 #[derive(Debug)]
 enum Kind {
     Target,
     Test,
 }
 
+/// An actor crate with the name and its path.
+struct ActorCrate {
+    name: String,
+    source: PathBuf,
+}
+
+impl ActorCrate {
+    /// Create a new `ActorCrate` from an input location.
+    fn new_from_path(path: &Path) -> Result<Self, anyhow::Error> {
+        let root = fs::read_dir(path)
+            .with_context(|| format!("Could not read path {}", path.display()))?;
+
+        let cargo_path = root
+            .filter_map(|e| e.ok())
+            .map(|f| f.path())
+            .find(|f| f.ends_with("Cargo.toml"))
+            .with_context(|| {
+                format!(
+                    "path {} doesn't have a valid Cargo.toml file",
+                    path.display()
+                )
+            })?;
+
+        let mut cargo_file = File::open(&cargo_path)
+            .with_context(|| format!("Could open {} file", cargo_path.display()))?;
+
+        // Unfortunately `toml` doesn't have from_read() like `serde_json`
+        // https://github.com/toml-rs/toml/issues/326
+        let mut cargo_str = String::new();
+        cargo_file
+            .read_to_string(&mut cargo_str)
+            .with_context(|| format!("Could not read  {} file", cargo_path.display()))?;
+
+        let cargo = cargo_str
+            .parse::<Table>()
+            .with_context(|| format!("{} is not a valid TOML file", cargo_path.display()))?;
+
+        let name = cargo
+            .get("package")
+            .and_then(|p| p.as_table())
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .with_context(|| {
+                format!(
+                    "{} is not a valid Rust Cargo.toml file, \"name\" is missing ",
+                    cargo_path.display()
+                )
+            })?;
+
+        Ok(Self {
+            name: name.into(),
+            source: path.join("src/actor.rs"),
+        })
+    }
+}
+
 /// Generate wasm actors for the input dir.
-fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
+fn generate_actors(kind: Kind) -> Result<(), anyhow::Error> {
     let out_dir = std::env::var_os("OUT_DIR")
         .as_ref()
         .map(Path::new)
         .map(|p| p.join("bundle"))
-        .expect("no OUT_DIR env var");
+        .context("no OUT_DIR env var")?;
     println!("cargo:warning=out_dir: {:?}", &out_dir);
 
     let manifest_dir =
-        Path::new(&std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
+        Path::new(&std::env::var_os("CARGO_MANIFEST_DIR").context("CARGO_MANIFEST_DIR unset")?)
             .to_path_buf();
 
-    let workspace_dir = &manifest_dir.parent().expect("Workspace dir should exist");
+    let workspace_dir = &manifest_dir
+        .parent()
+        .context("Workspace doesn't exist exist")?;
 
     let artifacts_dir = workspace_dir.join("artifacts");
 
     // Cargo executable location.
-    let cargo = std::env::var_os("CARGO").expect("no CARGO env var");
+    let cargo = std::env::var_os("CARGO").context("no CARGO env var")?;
 
     let path = match kind {
         Kind::Target => workspace_dir.join("actors"),
         Kind::Test => workspace_dir.join("tests"),
     };
 
-    let actor_dirs = fs::read_dir(&path)
-        .expect(&format!("Could not read dir {}", path.display()))
+    let actors = fs::read_dir(&path)
+        .with_context(|| format!("Could not read dir {}", path.display()))?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|e| e.is_dir())
@@ -58,14 +119,13 @@ fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
                 .filter_map(|e| e.ok())
                 .any(|f| f.path().ends_with("Cargo.toml"))
         })
-        .collect::<Vec<PathBuf>>();
+        .filter_map(|p| ActorCrate::new_from_path(&p).ok())
+        .collect::<Vec<ActorCrate>>();
 
-    let actor_names = actor_dirs
+    let actor_names = actors
         .iter()
-        .filter_map(|a| a.file_name())
-        .filter_map(|a| a.to_str())
-        .map(|s| s.to_string())
-        .collect::<Vec<String>>();
+        .map(|a| a.name.as_str())
+        .collect::<Vec<&str>>();
 
     // Cargo build command for all test_actors at once.
     let mut cmd = Command::new(cargo);
@@ -89,12 +149,12 @@ fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
     println!("cargo:warning=cmd={:?}", &cmd);
 
     // Launch the command.
-    let mut child = cmd.spawn().expect("failed to launch cargo build");
+    let mut child = cmd.spawn().context("failed to launch cargo build")?;
 
     // Pipe the output as cargo warnings. Unfortunately this is the only way to
     // get cargo build to print the output.
-    let stdout = child.stdout.take().expect("no stdout");
-    let stderr = child.stderr.take().expect("no stderr");
+    let stdout = child.stdout.take().context("Stdout is not available")?;
+    let stderr = child.stderr.take().context("Stderr is not available")?;
     let j1 = thread::spawn(move || {
         for line in BufReader::new(stderr).lines() {
             println!("cargo:warning={:?}", line.unwrap());
@@ -109,18 +169,17 @@ fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
     j1.join().unwrap();
     j2.join().unwrap();
 
-    let result = child.wait().expect("failed to wait for build to finish");
+    let result = child.wait().context("failed to wait for build to finish")?;
     if !result.success() {
-        return Err("actor build failed".into());
+        bail!("actor build failed");
     }
 
     // Create the Abi files and copy the wasm files to the artifacts dir.
-    let actor_source_files = actor_dirs.iter().map(|a| (a, a.join("src/actor.rs")));
-    for (actor_dir, actor_path) in actor_source_files {
-        let src = fs::read_to_string(&actor_path)
-            .expect(&format!("Could not open {}", actor_path.display()));
-        let syntax =
-            syn::parse_file(&src).expect(&format!("Could not parse {}", actor_path.display()));
+    for actor in actors {
+        let src = fs::read_to_string(&actor.source)
+            .with_context(|| format!("Could not open {}", actor.source.display()))?;
+        let syntax = syn::parse_file(&src)
+            .with_context(|| format!("Could not parse {}", actor.source.display()))?;
         let invoke = syntax
             .items
             .into_iter()
@@ -128,10 +187,12 @@ fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
                 Item::Fn(f) if f.sig.ident == "invoke" => Some(f),
                 _ => None,
             })
-            .expect(&format!(
-                "Could not find invoke function on {}",
-                actor_path.display()
-            ));
+            .with_context(|| {
+                format!(
+                    "Could not find invoke function on {}",
+                    actor.source.display()
+                )
+            })?;
 
         let match_method = invoke
             .block
@@ -149,10 +210,12 @@ fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
                 }
                 _ => None,
             })
-            .expect(&format!(
-                "Could not find match_method macro in the invoke function of {}",
-                actor_path.display(),
-            ));
+            .with_context(|| {
+                format!(
+                    "Could not find match_method macro in the invoke function of {}",
+                    actor.source.display(),
+                )
+            })?;
         let group = match_method
             .mac
             .tokens
@@ -161,10 +224,12 @@ fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
                 TokenTree::Group(g) => Some(g),
                 _ => None,
             })
-            .expect(&format!(
-                "Could not parse the match_method contents of {}",
-                actor_path.display(),
-            ));
+            .with_context(|| {
+                format!(
+                    "Could not parse the match_method contents of {}",
+                    actor.source.display(),
+                )
+            })?;
 
         let mut constructor = None;
         let mut set_up = None;
@@ -181,11 +246,13 @@ fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
                     m => {
                         let m = m.to_string();
                         let method = m.trim_matches('"');
-                        methods.push(Method::new_from_name(method).expect(&format!(
-                            "Could not generate Method for method {} of actor {}",
-                            m,
-                            actor_path.display()
-                        )));
+                        methods.push(Method::new_from_name(method).with_context(|| {
+                            format!(
+                                "Could not generate Method for method {} of actor {}",
+                                m,
+                                actor.source.display()
+                            )
+                        })?);
                     }
                 },
                 _ => {}
@@ -205,35 +272,35 @@ fn generate_actors(kind: Kind) -> Result<(), Box<dyn Error>> {
             }
         };
 
-        // Safe to `unwrap()` as at this time we know the file exists.
-        let actor_name = actor_dir
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            // Rust replaces the -'s in the crate name with _'s,
-            // so we replace it back.
-            .replace("-", "_");
+        let actor_wasm_file = out_dir.join(format!(
+            "wasm32-unknown-unknown/wasm/{}.wasm",
+            // Cargo replaces -'s for _'s on compilation targets.
+            &actor.name.replace("-", "_")
+        ));
 
-        let actor_wasm_file =
-            out_dir.join(format!("wasm32-unknown-unknown/wasm/{actor_name}.wasm"));
-
-        let actor_dest_name = actor_name.replace("test", ".t").to_case(Case::Pascal);
+        let actor_dest_name = actor.name.replace("test", ".t").to_case(Case::Pascal);
 
         fs::copy(
             &actor_wasm_file,
             artifacts_dir.join(format!("{actor_dest_name}.wasm")),
         )
-        .expect("Could not copy wasm file to artifacts dir");
+        .with_context(|| {
+            format!(
+                "Could not copy {} wasm file to artifacts dir",
+                &actor_wasm_file.display()
+            )
+        })?;
 
         let mut abi_file =
             File::create(artifacts_dir.join(format!("{actor_dest_name}.cbor"))).unwrap();
         abi_file
             .write_all(&kythera_lib::to_vec(&abi).unwrap())
-            .expect(&format!(
-                "Could not generate Abi file for actor {}",
-                actor_path.display()
-            ));
+            .with_context(|| {
+                format!(
+                    "Could not generate Abi file for actor {}",
+                    actor.source.display()
+                )
+            })?;
     }
     Ok(())
 }
