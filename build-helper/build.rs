@@ -82,7 +82,7 @@ impl ActorCrate {
 }
 
 /// Generate wasm actors for the input dir.
-fn generate_actors(kind: Kind) -> Result<(), anyhow::Error> {
+fn generate_actors(kind: Kind, clean_artifacts_dir: bool) -> Result<(), anyhow::Error> {
     let out_dir = std::env::var_os("OUT_DIR")
         .as_ref()
         .map(Path::new)
@@ -267,8 +267,14 @@ fn generate_actors(kind: Kind) -> Result<(), anyhow::Error> {
         // Create artifacts dir.
         if let Err(err) = fs::create_dir(&artifacts_dir) {
             match err.kind() {
-                std::io::ErrorKind::AlreadyExists => {}
-                err => panic!("Could not create artifacts dir {err}"),
+                std::io::ErrorKind::AlreadyExists => {
+                    if clean_artifacts_dir {
+                        fs::remove_dir_all(&artifacts_dir)
+                            .context("Could not remove artifacts dir")?;
+                        fs::create_dir(&artifacts_dir).context("Could not create artifacts dir")?;
+                    }
+                }
+                err => bail!("Could not create artifacts dir {err}"),
             }
         };
 
@@ -278,7 +284,21 @@ fn generate_actors(kind: Kind) -> Result<(), anyhow::Error> {
             &actor.name.replace("-", "_")
         ));
 
-        let actor_dest_name = actor.name.replace("test", ".t").to_case(Case::Pascal);
+        // If the Actor is a test actor we rename the trailing `-test` to `.t`.
+        let actor_dest_name = match kind {
+            Kind::Target => actor.name,
+            Kind::Test => match actor.name.rfind("test") {
+                Some(index) => {
+                    let (before, _after) = actor.name.split_at(index);
+                    format!("{}.t", before)
+                }
+                None => bail!(format!(
+                    "{} actor should be a test actor, but doesn't have test in its name",
+                    actor.name
+                )),
+            },
+        }
+        .to_case(Case::Pascal);
 
         fs::copy(
             &actor_wasm_file,
@@ -310,8 +330,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("cargo:rerun-if-changed={}", file);
     }
 
-    generate_actors(Kind::Target).expect("Could not generate target actors");
-    generate_actors(Kind::Test).expect("Could not generate test actors");
+    generate_actors(Kind::Target, true).expect("Could not generate target actors");
+    generate_actors(Kind::Test, false).expect("Could not generate test actors");
 
     Ok(())
 }
