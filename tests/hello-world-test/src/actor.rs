@@ -5,13 +5,13 @@ use fvm_ipld_blockstore::Block;
 use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
 use fvm_ipld_encoding::DAG_CBOR;
 use fvm_ipld_encoding::{de::DeserializeOwned, RawBytes};
+use fvm_sdk::sys::ErrorNumber;
 use fvm_sdk::NO_DATA_BLOCK_ID;
 use fvm_shared::address::Address;
 use fvm_shared::bigint::Zero;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
 use fvm_shared::sys::SendFlags;
-use fvm_sdk::sys::ErrorNumber;
 use serde::ser;
 use thiserror::Error;
 
@@ -42,7 +42,7 @@ impl ActorState {
             block.codec,
             block.data.as_ref(),
         )
-            .unwrap()
+        .unwrap()
     }
 }
 
@@ -72,8 +72,8 @@ enum IpldError {
 }
 
 fn return_ipld<T>(value: &T) -> std::result::Result<u32, IpldError>
-    where
-        T: ser::Serialize + ?Sized,
+where
+    T: ser::Serialize + ?Sized,
 {
     let bytes = fvm_ipld_encoding::to_vec(value)?;
     Ok(fvm_sdk::ipld::put_block(DAG_CBOR, bytes.as_slice())?)
@@ -160,7 +160,7 @@ fn TestMethodParameter(input: u32) -> u32 {
         None,
         SendFlags::empty(),
     )
-        .unwrap();
+    .unwrap();
 
     assert_eq!(res.exit_code, ExitCode::OK);
 
@@ -169,8 +169,8 @@ fn TestMethodParameter(input: u32) -> u32 {
             .expect("Should be able to get result from HelloWorld of target actor")
             .data,
     )
-        .deserialize()
-        .unwrap();
+    .deserialize()
+    .unwrap();
 
     assert_eq!(who_are_you, String::from("Basic Target Actor"));
 

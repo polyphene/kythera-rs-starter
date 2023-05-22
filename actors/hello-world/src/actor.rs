@@ -3,9 +3,9 @@ use frc42_dispatch::match_method;
 use fvm_ipld_blockstore::Block;
 use fvm_ipld_encoding::tuple::{Deserialize_tuple, Serialize_tuple};
 use fvm_ipld_encoding::DAG_CBOR;
+use fvm_sdk::sys::ErrorNumber;
 use fvm_sdk::NO_DATA_BLOCK_ID;
 use fvm_shared::error::ExitCode;
-use fvm_sdk::sys::ErrorNumber;
 use serde::ser;
 use thiserror::Error;
 
@@ -36,7 +36,7 @@ impl ActorState {
             block.codec,
             block.data.as_ref(),
         )
-            .unwrap()
+        .unwrap()
     }
 }
 
@@ -53,8 +53,8 @@ enum IpldError {
 }
 
 fn return_ipld<T>(value: &T) -> std::result::Result<u32, IpldError>
-    where
-        T: ser::Serialize + ?Sized,
+where
+    T: ser::Serialize + ?Sized,
 {
     let bytes = fvm_ipld_encoding::to_vec(value)?;
     Ok(fvm_sdk::ipld::put_block(DAG_CBOR, bytes.as_slice())?)
