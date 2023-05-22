@@ -10,6 +10,15 @@ done by @fridrik01.
 
 Clone this repository and look into the [actors](./actors/) and [tests](./tests/) dirs for examples on how to create both `Target` and `Test` actors.
 
+## Caveats
+
+Currently there are some shortcommings with the Starter kit:
+
+- User can only have one `test` actor per `target` actor.
+- `build-helper` directory needs to be mantained, it's where `build.rs` script resides
+- User has to have the actor source file named `actor.rs` in the `/src` dir
+- Not directly becuase of the project structure but because of Rust itself, `build.rs` will only run if a source file changes.
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
