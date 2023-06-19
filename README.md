@@ -10,6 +10,12 @@ done by @fridrik01.
 
 Clone this repository and look into the [actors](./actors/) and [tests](./tests/) dirs for examples on how to create both `Target` and `Test` actors.
 
+A new actor and test actor templates can be created with the `create-actor.sh` script.
+
+```shell
+./create-actor.sh <actor-name> 
+```
+
 ## Caveats
 
 Currently there are some shortcommings with the Starter kit:
