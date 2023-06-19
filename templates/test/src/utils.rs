@@ -12,7 +12,7 @@ use thiserror::Error;
  **************************************************/
 
 #[derive(Serialize_tuple, Deserialize_tuple)]
-struct ActorState {
+pub struct ActorState {
     // TODO set your actors state properties here
     placeholder: u64
 }
@@ -59,7 +59,7 @@ pub fn deserialize_params<D: DeserializeOwned>(params: u32) -> D {
 }
 
 #[derive(Error, Debug)]
-enum IpldError {
+pub enum IpldError {
     #[error("ipld encoding error: {0}")]
     Encoding(#[from] fvm_ipld_encoding::Error),
     #[error("ipld blockstore error: {0}")]
@@ -67,7 +67,7 @@ enum IpldError {
 }
 
 #[allow(dead_code)]
-fn return_ipld<T>(value: &T) -> std::result::Result<u32, IpldError>
+pub fn return_ipld<T>(value: &T) -> std::result::Result<u32, IpldError>
     where
         T: ser::Serialize + ?Sized,
 {
