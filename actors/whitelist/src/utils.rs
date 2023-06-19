@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use cid::{multihash::Code, Cid};
 use fvm_ipld_blockstore::Block;
 use fvm_ipld_encoding::DAG_CBOR;
 use fvm_ipld_encoding::de::DeserializeOwned;
+use fvm_shared::address::Address;
 use fvm_shared::error::ErrorNumber;
 use serde::ser;
 use serde_tuple::{Deserialize_tuple, Serialize_tuple};
@@ -12,18 +14,16 @@ use thiserror::Error;
  **************************************************/
 
 #[derive(Serialize_tuple, Deserialize_tuple)]
-struct ActorState {
-    // TODO set your actors state properties here
-    placeholder: u64
+pub struct ActorState {
+    pub(crate) admin: Address,
+    pub(crate) whitelist: HashMap<Address, bool>
 }
 
 impl ActorState {
-    #[allow(dead_code)]
     pub fn load(cid: &Cid) -> Self {
         let data = fvm_sdk::ipld::get(cid).unwrap();
         fvm_ipld_encoding::from_slice::<Self>(&data).unwrap()
     }
-    #[allow(dead_code)]
     pub fn save(&self) -> Cid {
         let serialized = fvm_ipld_encoding::to_vec(self).unwrap();
         let block = Block {
@@ -45,7 +45,6 @@ impl ActorState {
  **************************************************/
 
 /// Deserialize message parameters into given struct.
-#[allow(dead_code)]
 pub fn deserialize_params<D: DeserializeOwned>(params: u32) -> D {
     let params = fvm_sdk::message::params_raw(params)
         .expect("Could not get message parameters")
@@ -59,7 +58,7 @@ pub fn deserialize_params<D: DeserializeOwned>(params: u32) -> D {
 }
 
 #[derive(Error, Debug)]
-enum IpldError {
+pub enum IpldError {
     #[error("ipld encoding error: {0}")]
     Encoding(#[from] fvm_ipld_encoding::Error),
     #[error("ipld blockstore error: {0}")]
@@ -67,7 +66,7 @@ enum IpldError {
 }
 
 #[allow(dead_code)]
-fn return_ipld<T>(value: &T) -> std::result::Result<u32, IpldError>
+pub fn return_ipld<T>(value: &T) -> std::result::Result<u32, IpldError>
     where
         T: ser::Serialize + ?Sized,
 {
