@@ -16,7 +16,7 @@ use toml::Table;
 use proc_macro2::TokenTree;
 use syn::{Expr, Item};
 
-const FILES_TO_WATCH: &[&str] = &["Cargo.toml", "src", "../actors", "../tests"];
+const FILES_TO_WATCH: &[&str] = &["Cargo.toml", "src", "../actors", "../tests", "../artifacts"];
 
 /// The Kind of actors to parse.
 #[derive(Debug)]
@@ -174,6 +174,20 @@ fn generate_actors(kind: Kind, clean_artifacts_dir: bool) -> Result<(), anyhow::
         bail!("actor build failed");
     }
 
+    // Create artifacts dir.
+    if let Err(err) = fs::create_dir(&artifacts_dir) {
+        match err.kind() {
+            std::io::ErrorKind::AlreadyExists => {
+                if clean_artifacts_dir {
+                    fs::remove_dir_all(&artifacts_dir)
+                        .context("Could not remove artifacts dir")?;
+                    fs::create_dir(&artifacts_dir).context("Could not create artifacts dir")?;
+                }
+            }
+            err => bail!("Could not create artifacts dir {err}"),
+        }
+    };
+
     // Create the Abi files and copy the wasm files to the artifacts dir.
     for actor in actors {
         let src = fs::read_to_string(&actor.source)
@@ -262,20 +276,6 @@ fn generate_actors(kind: Kind, clean_artifacts_dir: bool) -> Result<(), anyhow::
             constructor,
             set_up,
             methods,
-        };
-
-        // Create artifacts dir.
-        if let Err(err) = fs::create_dir(&artifacts_dir) {
-            match err.kind() {
-                std::io::ErrorKind::AlreadyExists => {
-                    if clean_artifacts_dir {
-                        fs::remove_dir_all(&artifacts_dir)
-                            .context("Could not remove artifacts dir")?;
-                        fs::create_dir(&artifacts_dir).context("Could not create artifacts dir")?;
-                    }
-                }
-                err => bail!("Could not create artifacts dir {err}"),
-            }
         };
 
         let actor_wasm_file = out_dir.join(format!(
