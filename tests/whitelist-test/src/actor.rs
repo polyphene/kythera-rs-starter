@@ -20,10 +20,6 @@ fn invoke(input: u32) -> u32 {
     match_method!(
         method_num,
         {
-            "Setup" => {
-                Setup();
-                NO_DATA_BLOCK_ID
-            },
             "TestFailNotAdmin" => {
                 TestFailNotAdmin(input);
                 NO_DATA_BLOCK_ID
@@ -40,11 +36,6 @@ fn invoke(input: u32) -> u32 {
             }
         }
     )
-}
-
-#[allow(non_snake_case)]
-fn Setup() {
-    // TODO add Setup logic
 }
 
 /// Expect the test to fail as we are trying to whitelist while not being the admin
@@ -71,7 +62,7 @@ fn TestFailNotAdmin(input: u32) {
     assert_eq!(res.exit_code, ExitCode::OK);
 }
 
-/// Expect the test to fail as we are trying to whitelist while not being the admin
+/// Test happy path by setting administrator and adding address to whitelist
 #[allow(non_snake_case)]
 fn TestHappyPath(input: u32) {
     let target_actor_id: u64 = utils::deserialize_params(input);

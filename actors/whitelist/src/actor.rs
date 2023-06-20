@@ -78,9 +78,13 @@ fn IsWhitelisted(input: u32) -> u32 {
 
 #[allow(non_snake_case)]
 fn SetWhitelist(input: u32) {
-    let (address, whitelist): (Address, bool) = utils::deserialize_params(input);
-
     let mut current_state: utils::ActorState = utils::ActorState::load(&fvm_sdk::sself::root().unwrap());
+
+    let caller: u64 = unsafe { fvm_sdk::sys::vm::message_context().unwrap().caller };
+
+    assert_eq!(caller, current_state.admin.id().unwrap(), "Only administrator can set whitelist");
+
+    let (address, whitelist): (Address, bool) = utils::deserialize_params(input);
 
     current_state.whitelist.insert(address, whitelist);
 
